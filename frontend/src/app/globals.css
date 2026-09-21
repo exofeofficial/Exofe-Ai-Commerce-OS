@@ -1,0 +1,315 @@
+@import "tailwindcss";
+
+/* Lenis smooth scroll (see components/SmoothScroll.tsx, mounted once in
+   the root layout so it covers every page). scroll-behavior: auto is
+   required — CSS's own smooth scroll fights Lenis's easing and is what
+   causes scrolling to visibly stutter/pause mid-scroll. */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+.lenis.lenis-scrolling iframe {
+  pointer-events: none;
+}
+
+/* Hide the browser's native scrollbar — scrolling still works exactly the
+   same, this just removes the visible track/thumb Chrome draws on the
+   right edge of the page. */
+html {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge/IE */
+}
+html::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/new Edge */
+}
+
+/* The developer submission dialog (DeveloperPortal.tsx) scrolls internally
+   and isn't covered by the html-only rule above — a thin themed scrollbar
+   here instead of the default OS one, since a tall form benefits from a
+   visible (if unobtrusive) scroll cue that a full page doesn't need. */
+dialog[aria-label="Project submission"] {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+dialog[aria-label="Project submission"]::-webkit-scrollbar {
+  width: 8px;
+}
+dialog[aria-label="Project submission"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+dialog[aria-label="Project submission"]::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+dialog[aria-label="Project submission"]::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+  background-clip: padding-box;
+}
+
+/* Dark mode is scoped to the client dashboard only (the .dashboard-dark
+   class lives on the dashboard layout's root div, never on <html> or
+   <body>) — the marketing site and admin panel stay light-only and are
+   completely unaffected by this. */
+@custom-variant dark (&:where(.dashboard-dark, .dashboard-dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --surface: #ffffff;
+  --ink: 0 0 0; /* rgb triplet (no alpha) — multiplied by an opacity
+                   modifier for every bg-ink/[.NN] / border-ink/[.NN]
+                   utility, so a single flip here re-themes every
+                   border/hover-tint in the dashboard at once */
+  --secondary: #fcba03; /* brand secondary — same value in both themes,
+                            gold reads fine on both light and dark */
+  color-scheme: light;
+}
+
+.dashboard-dark {
+  --background: #131220;
+  --foreground: #f1effa;
+  --surface: #1c1a2a;
+  --ink: 255 255 255;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-ink: rgb(var(--ink));
+  --color-secondary: var(--secondary);
+  --font-sans: var(--font-exo2);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-exo2);
+}
+
+/* Browsers default buttons to cursor: default, not pointer, unlike links */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Subtle dotted grid backdrop for hero */
+.bg-grid {
+  background-image: radial-gradient(circle, rgba(91, 79, 233, 0.12) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Animated flowing gradient text */
+@keyframes gradient-x {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+.animate-gradient-x {
+  background-size: 200% 200%;
+  animation: gradient-x 5s ease infinite;
+}
+
+/* Shine sweep for buttons */
+@keyframes shine {
+  0% {
+    transform: translateX(-120%) skewX(-20deg);
+  }
+  60%,
+  100% {
+    transform: translateX(320%) skewX(-20deg);
+  }
+}
+.shine-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  transform: translateX(-120%) skewX(-20deg);
+}
+.shine-btn:hover::after {
+  animation: shine 0.9s ease;
+}
+
+/* Same sweep, tinted with the secondary gold instead of white — used on
+   the dashboard's primary (indigo gradient) buttons so every one of them
+   picks up the secondary color without recoloring their background. */
+.shine-btn-gold::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(252, 186, 3, 0.55),
+    transparent
+  );
+  transform: translateX(-120%) skewX(-20deg);
+}
+.shine-btn-gold:hover::after {
+  animation: shine 0.9s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-gradient-x,
+  .shine-btn:hover::after,
+  .shine-btn-gold:hover::after {
+    animation: none;
+  }
+}
+
+/* Dashboard boot loader (recolored Exofe brand version of a Uiverse.io
+   loader by SelfMadeSystem). Keyframes are prefixed "exofe-loader-" so
+   they never collide with Tailwind's own built-in "spin" animation. */
+.exofe-loader-dash {
+  animation:
+    exofe-loader-dash-array 2s ease-in-out infinite,
+    exofe-loader-dash-offset 2s linear infinite;
+}
+
+.exofe-loader-spin {
+  animation:
+    exofe-loader-spin-dash-array 2s ease-in-out infinite,
+    exofe-loader-spin 8s ease-in-out infinite,
+    exofe-loader-dash-offset 2s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes exofe-loader-dash-array {
+  0% {
+    stroke-dasharray: 0 1 359 0;
+  }
+  50% {
+    stroke-dasharray: 0 359 1 0;
+  }
+  100% {
+    stroke-dasharray: 359 1 0 0;
+  }
+}
+
+@keyframes exofe-loader-spin-dash-array {
+  0% {
+    stroke-dasharray: 270 90;
+  }
+  50% {
+    stroke-dasharray: 0 360;
+  }
+  100% {
+    stroke-dasharray: 270 90;
+  }
+}
+
+@keyframes exofe-loader-dash-offset {
+  0% {
+    stroke-dashoffset: 365;
+  }
+  100% {
+    stroke-dashoffset: 5;
+  }
+}
+
+/* AI Business OS connector lines — a short gradient segment travels along
+   the (pathLength-normalized) path in a continuous loop. */
+@keyframes connector-flow {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+/* Closing CTA ecosystem visual — a slow ambient opacity breathe rather than
+   a moving dash, kept subtle per the "premium, not neon" brief. */
+@keyframes ecosystem-line-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+.ecosystem-line {
+  animation: ecosystem-line-pulse 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ecosystem-line {
+    animation: none;
+  }
+}
+
+@keyframes exofe-loader-spin {
+  0% {
+    rotate: 0deg;
+  }
+  12.5%,
+  25% {
+    rotate: 270deg;
+  }
+  37.5%,
+  50% {
+    rotate: 540deg;
+  }
+  62.5%,
+  75% {
+    rotate: 810deg;
+  }
+  87.5%,
+  100% {
+    rotate: 1080deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exofe-loader-dash,
+  .exofe-loader-spin {
+    animation: none;
+  }
+}
+
+/* React Flow (Flow Builder page) ships its own light-themed chrome —
+   these override just the bits (controls, minimap) that don't already
+   pick up our surface/foreground tokens, scoped to dashboard dark mode
+   the same way as everything else. */
+.dashboard-dark .react-flow__controls-button {
+  background: var(--surface);
+  border-bottom-color: rgb(255 255 255 / 0.08);
+  fill: var(--foreground);
+  color: var(--foreground);
+}
+.dashboard-dark .react-flow__controls-button:hover {
+  background: rgb(255 255 255 / 0.06);
+}
+.dashboard-dark .react-flow__minimap {
+  background: var(--surface);
+}

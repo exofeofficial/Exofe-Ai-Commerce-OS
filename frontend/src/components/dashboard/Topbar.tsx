@@ -1,0 +1,314 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  Bell,
+  Crown,
+  HelpCircle,
+  LogOut,
+  Moon,
+  Plug,
+  Search,
+  Settings,
+  Sparkles,
+  Sun,
+  User,
+  UsersRound,
+} from "lucide-react";
+import { clearToken, goToMarketing } from "@/lib/auth";
+import { getUserProfile, setUserProfile } from "@/lib/user";
+import { useTheme } from "@/components/dashboard/ThemeProvider";
+import { getMe, getNotifications, markNotificationsRead, type Notification } from "@/lib/api";
+import SearchPalette from "@/components/dashboard/SearchPalette";
+
+const POLL_INTERVAL_MS = 30_000;
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+const MENU_ITEMS = [
+  { label: "User Profile", href: "/dashboard/settings", icon: User },
+  { label: "Integrations", href: "/dashboard/integrations", icon: Plug },
+  { label: "Settings", href: "/dashboard/settings", icon: Settings },
+  { label: "Team", href: "/dashboard/team", icon: UsersRound },
+  { label: "Help Center", href: "/docs", icon: HelpCircle },
+];
+
+export default function Topbar() {
+  const router = useRouter();
+  const { theme, toggleTheme } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [profile, setProfile] = useState<{ firstName: string; lastName?: string; email: string } | null>(null);
+
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Reads localStorage, has to happen after mount so the server render
+  // and first client render match (same pattern used across the
+  // dashboard for client only data). That cache may be empty on a fresh
+  // subdomain — app.exofe.com never shares exofe.com's localStorage —
+  // so the real name follows right behind from the backend.
+  useEffect(() => {
+    setProfile(getUserProfile());
+    getMe()
+      .then((me) => {
+        setProfile(me);
+        setUserProfile(me);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      getNotifications()
+        .then((res) => {
+          setNotifications(res.notifications);
+          setUnreadCount(res.unreadCount);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const id = setInterval(refresh, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  const handleOpenNotifications = () => {
+    const next = !notifOpen;
+    setNotifOpen(next);
+    if (next && unreadCount > 0) {
+      markNotificationsRead()
+        .then((res) => {
+          setNotifications(res.notifications);
+          setUnreadCount(res.unreadCount);
+        })
+        .catch(() => {});
+    }
+  };
+
+  const handleLogout = () => {
+    clearToken();
+    goToMarketing(router);
+  };
+
+  const displayName = profile ? `${profile.firstName}${profile.lastName ? ` ${profile.lastName}` : ""}` : "Account";
+  const initial = profile?.firstName?.[0]?.toUpperCase() ?? "?";
+
+  return (
+    <header className="fixed inset-x-0 top-0 z-30 flex h-16 items-center gap-3 bg-[#171326] px-4 sm:px-6">
+      <div className="flex min-w-0 shrink-0 items-center gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-full.png" alt="Exofe" className="h-6 w-auto object-contain brightness-0 invert" />
+      </div>
+
+      <div className="relative mx-auto hidden w-full max-w-xl flex-1 sm:block">
+        <button
+          type="button"
+          aria-label="Search"
+          onClick={() => setSearchOpen(true)}
+          className="flex w-full items-center gap-2 rounded-lg bg-white/[.06] px-3 py-2 text-sm text-white/40 transition-colors hover:bg-white/[.09]"
+        >
+          <Search className="h-4 w-4 shrink-0" strokeWidth={2} />
+          <span className="flex-1 text-left">Search</span>
+          <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold tracking-wide text-white/30">
+            <span className="rounded border border-white/10 px-1.5 py-0.5">CTRL</span>
+            <span className="rounded border border-white/10 px-1.5 py-0.5">K</span>
+          </span>
+        </button>
+        <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Link
+          href="/dashboard/ai-assistant"
+          aria-label="AI Assistant"
+          className="hidden h-9 w-9 items-center justify-center rounded-full text-white/60 hover:bg-white/[.08] sm:flex"
+        >
+          <Sparkles className="h-[18px] w-[18px]" strokeWidth={2} />
+        </Link>
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Notifications"
+            onClick={handleOpenNotifications}
+            className="relative flex h-9 w-9 items-center justify-center rounded-full text-white/60 hover:bg-white/[.08]"
+          >
+            <Bell className="h-[18px] w-[18px]" strokeWidth={2} />
+            {unreadCount > 0 && <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-red-500" />}
+          </button>
+
+          <AnimatePresence>
+            {notifOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close notifications"
+                  onClick={() => setNotifOpen(false)}
+                  className="fixed inset-0 z-30 cursor-default"
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                  transition={{ duration: 0.15, ease: EASE }}
+                  className="absolute right-0 z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-ink/[.06] bg-surface shadow-xl"
+                >
+                  <div className="border-b border-ink/[.06] px-4 py-3">
+                    <p className="text-sm font-bold text-foreground">Notifications</p>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-xs text-foreground/45">No notifications yet.</p>
+                    ) : (
+                      notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          className={`border-b border-ink/[.04] px-4 py-3 last:border-b-0 ${
+                            n.isRead ? "" : "bg-[#45157b]/[.04]"
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-foreground">{n.title}</p>
+                          <p className="mt-0.5 text-xs leading-relaxed text-foreground/60">{n.body}</p>
+                          <p className="mt-1 text-[11px] text-foreground/35">{timeAgo(n.createdAt)}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-label="Account menu"
+            className="flex items-center gap-2 rounded-full bg-white/[.06] py-1 pl-1 pr-3 text-sm font-medium text-white/80 transition-colors hover:bg-white/[.1]"
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-300 to-purple-400 text-xs font-bold text-white">
+              {initial}
+            </span>
+            <span className="max-w-[8rem] truncate">{displayName}</span>
+          </button>
+
+          <AnimatePresence>
+            {open && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close account menu"
+                  onClick={() => setOpen(false)}
+                  className="fixed inset-0 z-30 cursor-default"
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                  transition={{ duration: 0.15, ease: EASE }}
+                  className="absolute right-0 z-40 mt-2 w-72 overflow-hidden rounded-2xl border border-ink/[.06] bg-surface p-2 shadow-xl"
+                >
+                  <div className="flex items-center gap-3 px-2.5 py-2.5">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-300 to-purple-400 text-sm font-bold text-white">
+                      {initial}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-foreground">{displayName}</p>
+                      <p className="truncate text-xs text-foreground/45">{profile?.email ?? ""}</p>
+                    </div>
+                  </div>
+
+                  <Link
+                    href="/dashboard/billing"
+                    onClick={() => setOpen(false)}
+                    className="mx-1 my-1.5 flex items-center justify-between rounded-xl shine-btn-gold relative overflow-hidden bg-[#45157b] px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Crown className="h-4 w-4" strokeWidth={2} />
+                      Upgrade profile
+                    </span>
+                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold tracking-wide text-[#1a1730]">PRO</span>
+                  </Link>
+
+                  <div className="my-1 h-px bg-ink/[.06]" />
+
+                  <nav className="flex flex-col gap-0.5">
+                    {MENU_ITEMS.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.label}
+                          href={item.href}
+                          onClick={() => setOpen(false)}
+                          className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground/70 hover:bg-ink/[.03] hover:text-foreground"
+                        >
+                          <Icon className="h-4 w-4 text-foreground/45" strokeWidth={2} />
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </nav>
+
+                  <div className="my-1 h-px bg-ink/[.06]" />
+
+                  <div className="flex items-center justify-between rounded-lg px-2.5 py-2 text-sm text-foreground/70">
+                    <span className="flex items-center gap-2.5">
+                      {theme === "dark" ? (
+                        <Moon className="h-4 w-4" strokeWidth={2} />
+                      ) : (
+                        <Sun className="h-4 w-4" strokeWidth={2} />
+                      )}
+                      Dark Mode
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={theme === "dark"}
+                      aria-label="Toggle dark mode"
+                      onClick={toggleTheme}
+                      className={`flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors ${
+                        theme === "dark" ? "bg-[#45157b]" : "bg-ink/[.15]"
+                      }`}
+                    >
+                      <motion.span
+                        layout
+                        transition={{ duration: 0.15, ease: EASE }}
+                        className="h-4 w-4 rounded-full bg-surface shadow-sm"
+                        style={{ marginLeft: theme === "dark" ? "auto" : 0 }}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="my-1 h-px bg-ink/[.06]" />
+
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:bg-red-500/15 dark:text-red-400 dark:hover:bg-red-500/10"
+                  >
+                    <LogOut className="h-4 w-4" strokeWidth={2} />
+                    Log out
+                  </button>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </header>
+  );
+}

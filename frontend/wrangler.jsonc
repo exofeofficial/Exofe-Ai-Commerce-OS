@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "exofe",
+  "compatibility_date": "2026-07-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    { "pattern": "exofe.com", "custom_domain": true },
+    { "pattern": "app.exofe.com", "custom_domain": true },
+    { "pattern": "developer.exofe.com", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  }
+}

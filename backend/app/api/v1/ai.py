@@ -1,0 +1,121 @@
+# app/api/v1/ai.py
+# Endpoints: GET/PATCH /ai/settings, GET/POST /ai/faqs, PATCH/DELETE /ai/faqs/{id}
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
+from sqlalchemy.orm import Session
+
+from app.ai.assistant import ask_assistant
+from app.core.dependencies import CurrentUser, get_current_user
+from app.core.exceptions import AppError
+from app.core.rate_limit import limiter
+from app.database.session import get_db
+from app.models.ai import (
+    AISettings,
+    AISettingsWrapper,
+    AssistantReplyResponse,
+    AIUsage,
+    AIUsageResponse,
+    FAQ,
+    FAQRequest,
+    FAQResponse,
+    FAQsResponse,
+    MessageResponse,
+)
+from app.services import ai_service, ai_usage_service
+
+router = APIRouter(prefix="/ai", tags=["ai"])
+
+DbSession = Annotated[Session, Depends(get_db)]
+CurrentOwner = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+def _require_business(current: CurrentUser) -> str:
+    if not current.business_id:
+        raise AppError(400, "No business on this account")
+    return current.business_id
+
+
+@router.get("/settings", response_model=AISettingsWrapper)
+def get_settings(db: DbSession, current: CurrentOwner) -> AISettingsWrapper:
+    business_id = _require_business(current)
+    return AISettingsWrapper(settings=AISettings(**ai_service.get_settings(db, business_id)))
+
+
+@router.patch("/settings", response_model=AISettingsWrapper)
+def update_settings(body: AISettings, db: DbSession, current: CurrentOwner) -> AISettingsWrapper:
+    business_id = _require_business(current)
+    updated = ai_service.update_settings(
+        db,
+        business_id,
+        business_prompt=body.business_prompt,
+        tone=body.tone,
+        greeting_message=body.greeting_message,
+        handover_enabled=body.handover_enabled,
+    )
+    return AISettingsWrapper(settings=AISettings(**updated))
+
+
+@router.get("/faqs", response_model=FAQsResponse)
+def list_faqs(db: DbSession, current: CurrentOwner) -> FAQsResponse:
+    business_id = _require_business(current)
+    faqs = ai_service.list_faqs(db, business_id)
+    return FAQsResponse(faqs=[FAQ(**f) for f in faqs])
+
+
+@router.post("/faqs", response_model=FAQResponse, status_code=status.HTTP_201_CREATED)
+def create_faq(body: FAQRequest, db: DbSession, current: CurrentOwner) -> FAQResponse:
+    business_id = _require_business(current)
+    faq = ai_service.create_faq(db, business_id, body.question, body.answer)
+    return FAQResponse(faq=FAQ(**faq))
+
+
+@router.patch("/faqs/{faq_id}", response_model=FAQResponse)
+def update_faq(faq_id: str, body: FAQRequest, db: DbSession, current: CurrentOwner) -> FAQResponse:
+    business_id = _require_business(current)
+    faq = ai_service.update_faq(db, business_id, faq_id, body.question, body.answer)
+    return FAQResponse(faq=FAQ(**faq))
+
+
+@router.delete("/faqs/{faq_id}", response_model=MessageResponse)
+def delete_faq(faq_id: str, db: DbSession, current: CurrentOwner) -> MessageResponse:
+    business_id = _require_business(current)
+    ai_service.delete_faq(db, business_id, faq_id)
+    return MessageResponse(message="FAQ deleted")
+
+
+@router.post("/assistant", response_model=AssistantReplyResponse)
+@limiter.limit("30/hour")
+async def assistant(
+    request: Request,
+    current: CurrentOwner,
+    message: str = Form(..., min_length=1, max_length=2000),
+    image: UploadFile | None = File(None),
+) -> AssistantReplyResponse:
+    image_arg = None
+    if image is not None:
+        if not (image.content_type or "").startswith("image/"):
+            raise AppError(400, "Attachment must be an image")
+        image_arg = (await image.read(), image.content_type)
+
+    result = ask_assistant(message, image_arg)
+    return AssistantReplyResponse(
+        reply=result.reply,
+        suggested_href=result.suggested_href,
+        suggested_label=result.suggested_label,
+    )
+
+
+@router.get("/usage", response_model=AIUsageResponse)
+def get_usage(db: DbSession, current: CurrentOwner) -> AIUsageResponse:
+    business_id = _require_business(current)
+    summary = ai_usage_service.get_usage_summary(db, business_id)
+    return AIUsageResponse(
+        usage=AIUsage(
+            month_count=summary["month_count"],
+            month_limit=summary["month_limit"],
+            blocked=summary["blocked"],
+            blocked_until=summary["blocked_until"].isoformat() if summary["blocked_until"] else None,
+        )
+    )
