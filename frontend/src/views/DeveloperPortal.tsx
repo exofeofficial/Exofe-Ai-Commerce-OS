@@ -5,13 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppWindow, ArrowRight, BookOpen, CheckCircle2, ChevronRight, Clock3, Code2, DollarSign, ExternalLink, FileArchive, FileCode2, Image as ImageIcon, LayoutDashboard, Link2, Loader2, LogOut, Menu, Paintbrush, Plus, Search, Send, ShieldCheck, Upload, Wallet, X } from "lucide-react";
-import { ApiError, getDeveloperSubmissions, saveDeveloperSubmission, submitDeveloperSubmission, uploadDeveloperPackage, uploadDeveloperScreenshot, type DeveloperSubmission, type DeveloperSubmissionInput } from "@/lib/api";
+import { ApiError, getDeveloperSubmissions, saveDeveloperSubmission, submitDeveloperSubmission, uploadDeveloperPackage, uploadDeveloperScreenshot, type DeveloperSubmission, type DeveloperSubmissionInput, type ThemeDefinition } from "@/lib/api";
 import { clearToken, getToken } from "@/lib/auth";
+import ThemeSectionsBuilder from "@/components/dashboard/ThemeSectionsBuilder";
 
 type Tab = "overview" | "app" | "theme" | "submissions" | "revenue";
 const tabs = [{ id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "app", label: "My apps", icon: AppWindow }, { id: "theme", label: "My themes", icon: Paintbrush }, { id: "submissions", label: "Submissions", icon: Send }, { id: "revenue", label: "Revenue", icon: Wallet }] as const;
 const statusLabels = { draft: "Draft", submitted: "In review", approved: "Approved", rejected: "Rejected" };
-const fresh = (kind: "app" | "theme"): DeveloperSubmissionInput => ({ kind, name: "", summary: "", description: "", version: "1.0.0", category: kind === "theme" ? "Store design" : "Productivity", demoUrl: "", screenshotUrl: "", packageUrl: "", supportEmail: "", notes: "", pricingModel: "free", price: 0 });
+const emptyThemeDefinition = (): ThemeDefinition => ({ sectionTemplates: [], layout: [] });
+const fresh = (kind: "app" | "theme"): DeveloperSubmissionInput => ({ kind, name: "", summary: "", description: "", version: "1.0.0", category: kind === "theme" ? "Store design" : "Productivity", demoUrl: "", screenshotUrl: "", packageUrl: "", supportEmail: "", notes: "", pricingModel: "free", price: 0, themeDefinition: kind === "theme" ? emptyThemeDefinition() : null });
 const inputClass = "mt-2 w-full rounded-lg border border-white/15 bg-[#10181b] px-3.5 py-3 text-sm text-white outline-none focus:border-emerald-400 disabled:opacity-60";
 const formatBytes = (bytes: number) => (bytes <= 0 ? "" : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
 const primaryClass = "inline-flex items-center justify-center gap-2 rounded-lg bg-[#66ebbc] px-4 py-2.5 text-sm font-semibold text-[#08231a] transition hover:bg-[#8af4cf] disabled:opacity-50";
@@ -56,8 +58,8 @@ export default function DeveloperPortal() {
   function open(kind: "app" | "theme", existing?: DeveloperSubmission) {
     setEditing(existing ?? null);
     if (existing) {
-      const { kind, name, summary, description, version, category, demoUrl, screenshotUrl, packageUrl, supportEmail, notes, pricingModel, price } = existing;
-      setForm({ kind, name, summary, description, version, category, demoUrl, screenshotUrl, packageUrl, supportEmail, notes, pricingModel, price });
+      const { kind, name, summary, description, version, category, demoUrl, screenshotUrl, packageUrl, supportEmail, notes, pricingModel, price, themeDefinition } = existing;
+      setForm({ kind, name, summary, description, version, category, demoUrl, screenshotUrl, packageUrl, supportEmail, notes, pricingModel, price, themeDefinition: themeDefinition ?? (kind === "theme" ? emptyThemeDefinition() : null) });
       // A data: URI only ever comes from the upload endpoints below — there's
       // no way to recover the original filename from it, so the label is
       // generic for a draft that was already uploaded before this session.
@@ -116,6 +118,7 @@ export default function DeveloperPortal() {
     const submit = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "submit";
     if (!form.screenshotUrl) { setFormError(screenshotMode === "upload" ? "Upload a screenshot before saving." : "Add a link to your screenshot."); return; }
     if (!form.packageUrl) { setFormError(packageMode === "upload" ? "Upload your package before saving." : "Add a link to your package."); return; }
+    if (form.kind === "theme" && !form.themeDefinition?.layout.length) { setFormError("Add at least one section to the theme's layout."); return; }
     if (form.pricingModel === "paid" && form.price <= 0) { setFormError("Set a price greater than 0, or switch to Free."); return; }
     if (submit && !consent) { setFormError("Confirm that you own this work and it is ready for review."); return; }
     setBusy(true); setFormError(""); setNotice("");
@@ -312,6 +315,18 @@ export default function DeveloperPortal() {
                 </>
               )}
             </div>
+            {form.kind === "theme" && (
+              <label className="block text-sm text-white/65">
+                Theme sections
+                <div className="mt-2">
+                  <ThemeSectionsBuilder
+                    value={form.themeDefinition ?? emptyThemeDefinition()}
+                    onChange={(v) => update("themeDefinition", v)}
+                    disabled={busy || locked}
+                  />
+                </div>
+              </label>
+            )}
             <label className="block text-sm text-white/65">Support email<input type="email" required maxLength={254} value={form.supportEmail} onChange={(e) => update("supportEmail", e.target.value)} placeholder="support@your-domain.com" className={inputClass} /></label>
             <label className="block text-sm text-white/65">Review notes <span className="text-white/30">(optional)</span><textarea maxLength={5000} rows={3} value={form.notes} onChange={(e) => update("notes", e.target.value)} placeholder="Setup instructions or anything the review team should know. Do not include passwords or API keys." className={inputClass} /></label>
             {!locked && <label className="flex items-start gap-3 text-xs leading-5 text-white/55"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1 accent-emerald-300" />I own or have permission to distribute this work, and my demo and package are ready for review.</label>}

@@ -3,6 +3,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
+from app.models.store_theme import ThemeDefinition
+from app.services.section_registry import fill_layout_defaults, sanitize_theme_definition, validate_theme_definition
+
 
 class SubmissionInput(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, str_strip_whitespace=True, extra="forbid")
@@ -27,6 +30,13 @@ class SubmissionInput(BaseModel):
     # Revenue tab in DeveloperPortal.tsx), this is just what the developer
     # declares it'll cost once that exists.
     price: float = Field(default=0, ge=0, le=10000)
+    # Only meaningful for kind="theme" — the developer's own section
+    # templates (real HTML + a settings schema, sanitized — see
+    # app/services/section_sanitizer.py, never arbitrary executable code)
+    # plus the default page layout built from them. This is what gets
+    # copied into a merchant's own editable copy on install
+    # (POST /store-theme/install/{id}), and what the storefront renders.
+    theme_definition: ThemeDefinition | None = None
 
     @model_validator(mode="after")
     def validate_pricing(self) -> "SubmissionInput":
@@ -34,6 +44,22 @@ class SubmissionInput(BaseModel):
             raise ValueError("A free submission can't have a price")
         if self.pricing_model == "paid" and self.price <= 0:
             raise ValueError("Set a price greater than 0 for a paid submission")
+        return self
+
+    @model_validator(mode="after")
+    def validate_theme_definition(self) -> "SubmissionInput":
+        if self.kind == "theme":
+            if not self.theme_definition:
+                raise ValueError("A theme needs at least one section in its layout")
+            raw = self.theme_definition.model_dump()
+            errors = validate_theme_definition(raw)
+            if errors:
+                raise ValueError("; ".join(errors))
+            sanitized = sanitize_theme_definition(raw)
+            sanitized["layout"] = fill_layout_defaults(sanitized, sanitized["layout"])
+            self.theme_definition = ThemeDefinition(**sanitized)
+        elif self.theme_definition:
+            raise ValueError("theme_definition is only for theme submissions")
         return self
 
     @field_validator("demo_url")
@@ -99,6 +125,9 @@ class SubmissionResponse(SubmissionInput):
     created_at: datetime
     updated_at: datetime
     submitted_at: datetime | None = None
+    # Not settable by the developer (SubmissionInput has extra="forbid" and
+    # this isn't declared there) — admin-only, via /admin/submissions/{id}/featured.
+    is_featured: bool = False
 
 
 class SubmissionList(BaseModel):

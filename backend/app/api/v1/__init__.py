@@ -19,6 +19,7 @@ from app.api.v1 import (
     products,
     public,
     settings,
+    store_theme,
     team,
     automation
 )
@@ -46,4 +47,5 @@ router.include_router(products.router)
 router.include_router(products.categories_router)
 router.include_router(public.router)
 router.include_router(settings.router)
+router.include_router(store_theme.router)
 router.include_router(team.router)

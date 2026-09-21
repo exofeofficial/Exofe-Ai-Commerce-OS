@@ -11,4 +11,5 @@ export const HIDDEN_CHROME_ROUTES = [
   "/developers",
   "/dev",
   "/themes",
+  "/store",
 ];

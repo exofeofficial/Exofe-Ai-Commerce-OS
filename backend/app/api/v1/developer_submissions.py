@@ -1,4 +1,5 @@
 import base64
+import json
 from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID, uuid4
@@ -40,6 +41,24 @@ def response(row) -> SubmissionResponse:
     values["id"] = str(values["id"])
     values.pop("user_id", None)
     return SubmissionResponse(**values)
+
+
+# theme_definition is JSONB — bound params don't auto-serialize Python
+# lists/dicts to JSON, so it's encoded here and the placeholder below casts
+# it explicitly (harmless for the None/app case: NULL::jsonb is still NULL).
+def _sql_values(body: SubmissionInput, **extra) -> dict:
+    values = body.model_dump()
+    if values["theme_definition"] is not None:
+        values["theme_definition"] = json.dumps(values["theme_definition"])
+    values.update(extra)
+    return values
+
+
+def _placeholder(key: str) -> str:
+    # CAST(...), not `:key::jsonb` — SQLAlchemy's text() treats a bare `::`
+    # as an escaped literal colon, so the cast-shorthand never gets
+    # recognized as following the bind param at all.
+    return f"CAST(:{key} AS jsonb)" if key == "theme_definition" else f":{key}"
 
 
 @router.post("/upload")
@@ -147,10 +166,9 @@ def get_public_theme(submission_id: UUID, db: Db):
 @router.post("", response_model=SubmissionResponse, status_code=201)
 @limiter.limit("30/hour")
 def create_submission(request: Request, body: SubmissionInput, db: Db, current: User):
-    values = body.model_dump()
-    values.update(id=str(uuid4()), user_id=current.user_id, status="draft", created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
+    values = _sql_values(body, id=str(uuid4()), user_id=current.user_id, status="draft", created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
     columns = ", ".join(values)
-    params = ", ".join(":" + key for key in values)
+    params = ", ".join(_placeholder(key) for key in values)
     row = db.execute(text(f"INSERT INTO developer_submissions ({columns}) VALUES ({params}) RETURNING *"), values).fetchone()
     result = response(row)
     db.commit()
@@ -159,10 +177,9 @@ def create_submission(request: Request, body: SubmissionInput, db: Db, current: 
 
 @router.put("/{submission_id}", response_model=SubmissionResponse)
 def update_submission(submission_id: UUID, body: SubmissionInput, db: Db, current: User):
-    values = body.model_dump()
-    assignments = ", ".join(key + " = :" + key for key in values)
-    values.update(id=str(submission_id), user_id=current.user_id, updated_at=datetime.now(timezone.utc))
-    row = db.execute(text(f"UPDATE developer_submissions SET {assignments}, updated_at = :updated_at WHERE id = :id AND user_id = :user_id AND status = 'draft' RETURNING *"), values).fetchone()
+    values = _sql_values(body, id=str(submission_id), user_id=current.user_id, updated_at=datetime.now(timezone.utc))
+    assignments = ", ".join(f"{key} = {_placeholder(key)}" for key in values)
+    row = db.execute(text(f"UPDATE developer_submissions SET {assignments} WHERE id = :id AND user_id = :user_id AND status = 'draft' RETURNING *"), values).fetchone()
     if row is None:
         raise AppError(404, "Draft not found or already submitted")
     result = response(row)

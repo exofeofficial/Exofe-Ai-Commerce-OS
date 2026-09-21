@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, ExternalLink, ImageOff, Mail, Store, Tag } from "lucide-react";
-import { ApiError, getPublicTheme, type PublicThemeDetail } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, CheckCircle2, ExternalLink, ImageOff, Loader2, Mail, Sparkles, Store, Tag } from "lucide-react";
+import { ApiError, getPublicTheme, installTheme, type PublicThemeDetail } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 
 // Same fallback gradients as the store grid (ThemeStorePage.tsx) — kept in
 // sync by index so a theme without a screenshot looks the same in both
@@ -17,9 +19,27 @@ const CARD_GRADIENTS = [
 ];
 
 export default function ThemeDetailPage({ id }: { id: string }) {
+  const router = useRouter();
   const [theme, setTheme] = useState<PublicThemeDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
+  const [installed, setInstalled] = useState(false);
+
+  async function activate() {
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      await installTheme(id);
+      setInstalled(true);
+      router.push("/dashboard/store-theme");
+    } catch (err) {
+      setInstallError(err instanceof ApiError ? err.message : "Couldn't activate this theme.");
+    } finally {
+      setInstalling(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -123,10 +143,36 @@ export default function ThemeDetailPage({ id }: { id: string }) {
                     href={theme.demoUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-4 flex items-center justify-center gap-2 rounded-full bg-[#45157b] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                    className="mt-4 flex items-center justify-center gap-2 rounded-full border border-black/[.12] px-4 py-2.5 text-sm font-semibold text-[#171326] transition-colors hover:bg-black/[.03]"
                   >
                     View live demo <ExternalLink className="h-3.5 w-3.5" />
                   </a>
+
+                  {getToken() ? (
+                    <button
+                      type="button"
+                      onClick={activate}
+                      disabled={installing || installed}
+                      className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-full bg-[#45157b] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                    >
+                      {installing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : installed ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" />
+                      )}
+                      {installed ? "Activated" : "Activate this theme"}
+                    </button>
+                  ) : (
+                    <Link
+                      href="/login"
+                      className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-full bg-[#45157b] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                    >
+                      Log in to activate
+                    </Link>
+                  )}
+                  {installError && <p className="mt-2 text-xs text-red-500">{installError}</p>}
 
                   <dl className="mt-6 space-y-4 border-t border-black/[.08] pt-5 text-sm">
                     <div className="flex items-center gap-2 text-black/60">

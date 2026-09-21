@@ -62,6 +62,39 @@ async function adminRequest<T>(path: string, options?: RequestInit): Promise<T> 
   return res.status === 204 ? (undefined as T) : res.json();
 }
 
+// Shared with the store-theme system below. A section instance is one
+// entry in a theme's layout: "type" is either the "product-grid" built-in
+// (needs a live loop over real products, so it's a hardcoded React
+// component) or one of the theme's own SectionTemplate types below.
+export type SectionInstance = {
+  id: string;
+  type: string;
+  settings: Record<string, string>;
+};
+export type SettingDef = {
+  id: string;
+  type: "text" | "richtext" | "image" | "url" | "color" | "select";
+  label: string;
+  default: string;
+  options?: string[];
+};
+// A developer-authored section type: real HTML with {{ settingId }}
+// placeholders (sanitized server-side, see backend
+// app/services/section_sanitizer.py — never arbitrary executable code)
+// plus the schema of settings that fill those placeholders in. This is
+// what makes every last detail (colors, font size, text, images)
+// merchant-editable: whatever the developer exposes as a setting here.
+export type SectionTemplate = {
+  type: string;
+  label: string;
+  html: string;
+  settings: SettingDef[];
+};
+export type ThemeDefinition = {
+  sectionTemplates: SectionTemplate[];
+  layout: SectionInstance[];
+};
+
 export type DeveloperSubmissionInput = {
   kind: "app" | "theme";
   name: string;
@@ -79,6 +112,10 @@ export type DeveloperSubmissionInput = {
   // pay to install it once the marketplace can actually charge anyone
   // (see the Revenue tab in DeveloperPortal.tsx).
   price: number;
+  // Only meaningful (and required) for kind: "theme" — the theme's own
+  // section templates plus the default layout a merchant's install starts
+  // from. See ThemeDefinition above.
+  themeDefinition?: ThemeDefinition | null;
 };
 export type DeveloperSubmission = DeveloperSubmissionInput & {
   id: string;
@@ -114,6 +151,48 @@ export type PublicThemeDetail = PublicTheme & {
 };
 export function getPublicTheme(id: string) {
   return request<{ theme: PublicThemeDetail }>(`/developers/submissions/public/themes/${id}`);
+}
+
+// ── Store theme (Shopify-style sections + settings, see backend
+// app/services/section_sanitizer.py for the full explanation) ─────────────
+
+// The one built-in section type — schema mirrored from backend
+// app/services/section_registry.py's PRODUCT_GRID_SETTINGS (it isn't part
+// of any theme's own sectionTemplates since it needs a live product loop).
+export const PRODUCT_GRID_SETTINGS: SettingDef[] = [
+  { id: "heading", type: "text", label: "Heading", default: "Our products" },
+  { id: "productsToShow", type: "select", label: "Products to show", default: "8", options: ["4", "8", "12"] },
+];
+
+// Copies an approved theme's section templates + default layout into this
+// merchant's own editable row — "activating" it. Requires a merchant account.
+export function installTheme(submissionId: string) {
+  return request<{ submissionId: string; themeName: string }>(`/store-theme/install/${submissionId}`, { method: "POST" });
+}
+export type StoreTheme = {
+  businessId: string;
+  submissionId: string;
+  themeName: string;
+  sectionTemplates: SectionTemplate[];
+  sections: SectionInstance[];
+  updatedAt: string;
+};
+// 404s if the merchant hasn't installed a theme yet.
+export function getStoreTheme() {
+  return request<StoreTheme>("/store-theme");
+}
+export function updateStoreTheme(sections: SectionInstance[]) {
+  return request<StoreTheme>("/store-theme", { method: "PUT", body: JSON.stringify({ sections }) });
+}
+export type PublicStorefront = {
+  businessName: string;
+  logoUrl: string | null;
+  sections: (SectionInstance & { html: string | null })[];
+  products: { id: string; name: string; price: number; image: string | null }[];
+};
+// Public — what a merchant's live storefront page fetches to render.
+export function getPublicStorefront(businessId: string) {
+  return request<PublicStorefront>(`/store-theme/public/${businessId}`);
 }
 export function saveDeveloperSubmission(body: DeveloperSubmissionInput, id?: string) {
   return request<DeveloperSubmission>(`/developers/submissions${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(body) });

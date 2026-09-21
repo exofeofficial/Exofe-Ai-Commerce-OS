@@ -28,3 +28,8 @@ ALTER TABLE developer_submissions ADD COLUMN IF NOT EXISTS screenshot_url TEXT N
 -- to 3 at once, shown as "Today's top picks" on themes.exofe.com. Not a
 -- date-based rotation: it just stays whatever an admin last set it to.
 ALTER TABLE developer_submissions ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT false;
+-- Only set for kind='theme': an ordered list of section instances (each a
+-- known type from app/services/section_registry.py, with its settings) —
+-- the theme's *default* layout, copied into a merchant's own editable row
+-- (store_theme_installs) on install. NULL for apps.
+ALTER TABLE developer_submissions ADD COLUMN IF NOT EXISTS theme_definition JSONB;
